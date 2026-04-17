@@ -1,4 +1,6 @@
 <launch>
+    <arg name="spawn_mapping_obstacle" default="true" />
+
     <!-- Using the simulation clock -->
     <param name="/use_sim_time" value="true"/>
 
@@ -13,14 +15,15 @@
     </include>
 
     <!-- Add our jackal robot into the simulation -->
+    <!-- 增加spawn_jackal.launch文件，生成jackal机器人 -->
     <include file="$(find me5413_world)/launch/include/spawn_jackal.launch"/>
 
-
+    <!-- 增加planar_box 文件，生成jackal机器人 -->
     <param name="planar_box_description" 
             command="$(find xacro)/xacro --inorder '$(find me5413_world)/launch/include/planar_box.urdf.xacro'" />
     
     <!-- comment the following out if you do not want the big red obstacle for mapping etc-->
-    <node name="spawn_box" pkg="gazebo_ros" type="spawn_model" output="screen"
+    <node if="$(arg spawn_mapping_obstacle)" name="spawn_box" pkg="gazebo_ros" type="spawn_model" output="screen"
             args="-urdf 
                 -param planar_box_description 
                 -model planar_box 

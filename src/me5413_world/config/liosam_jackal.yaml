@@ -1,0 +1,88 @@
+lio_sam:
+
+  # Topics
+  pointCloudTopic: "/mid/points"
+  imuTopic: "/imu/data"
+  odomTopic: "odometry/imu"
+  gpsTopic: "odometry/gps"
+
+  # Frames
+  lidarFrame: "velodyne"
+  baselinkFrame: "base_link"
+  odometryFrame: "odom"
+  mapFrame: "map"
+
+  # GPS Settings (disabled)
+  useImuHeadingInitialization: false
+  useGpsElevation: false
+  gpsCovThreshold: 2.0
+  poseCovThreshold: 25.0
+
+  # Export settings
+  savePCD: true
+  savePCDDirectory: "/zhouxin/ME5413_Final_Project/src/me5413_world/maps/liosam_pcd"
+
+  # Sensor Settings
+  sensor: velodyne          # lidar sensor type: velodyne or ouster
+  N_SCAN: 16                # VLP-16: 16 channels
+  Horizon_SCAN: 1800        # VLP-16 at 10Hz: 1800 points/ring
+  downsampleRate: 1
+  lidarMinRange: 1.0
+  lidarMaxRange: 50.0
+
+  # IMU Settings
+  imuAccNoise: 3.9939570888238808e-03
+  imuGyrNoise: 1.5636343949698187e-03
+  imuAccBiasN: 6.4356659353532566e-05
+  imuGyrBiasN: 3.5640318696367613e-05
+  imuGravity: 9.80511
+  imuRPYWeight: 0.05
+
+  # Extrinsics: LiDAR -> IMU
+  # LiDAR is 0.322m above IMU (both aligned with base_link, no rotation)
+  extrinsicTrans: [0.0, 0.0, -0.322]
+  extrinsicRot: [1, 0, 0,
+                 0, 1, 0,
+                 0, 0, 1]
+  extrinsicRPY: [1, 0, 0,
+                 0, 1, 0,
+                 0, 0, 1]
+
+  # LOAM feature threshold
+  edgeThreshold: 1.0
+  surfThreshold: 0.1
+  edgeFeatureMinValidNum: 1
+  surfFeatureMinValidNum: 100
+
+  # voxel filter paprams
+  odometrySurfLeafSize: 0.2
+  mappingCornerLeafSize: 0.2
+  mappingSurfLeafSize: 0.2
+
+  # robot motion constraint
+  z_tollerance: 1000.0       # 允许z轴变化（多层建筑）
+  rotation_tollerance: 1000.0
+
+  # CPU Params
+  numberOfCores: 4
+  mappingProcessInterval: 0.10
+
+  # Surrounding map
+  surroundingkeyframeAddingDistThreshold: 0.5
+  surroundingkeyframeAddingAngleThreshold: 0.15
+  surroundingKeyframeDensity: 1.0
+  surroundingKeyframeSearchRadius: 50.0
+
+  # Loop closure
+  loopClosureEnableFlag: false
+  loopClosureFrequency: 1.0           # 降低频率，避免连续错误回环
+  surroundingKeyframeSize: 50
+  historyKeyframeSearchRadius: 5.0    # 足够大以覆盖开放空间漂移后的真实匹配
+  historyKeyframeSearchTimeDiff: 30.0
+  historyKeyframeSearchNum: 50        # 更多帧参与ICP，开放空间假匹配难以通过
+  historyKeyframeFitnessScore: 0.1    # 严格门槛，开放空间ICP难以达到
+
+  # Visualization
+  globalMapVisualizationSearchRadius: 1000.0
+  globalMapVisualizationPoseDensity: 10.0
+  globalMapVisualizationLeafSize: 1.0

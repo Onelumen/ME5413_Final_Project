@@ -1,7 +1,7 @@
 <launch>
   <!-- Configuration of Jackal which you would like to simulate.
        See jackal_description for details. -->
-  <arg name="config" default="base" />
+  <arg name="config" default="front_laser" />
 
   <!-- Load Jackal's description, controllers, and teleop nodes. -->
   <!-- <include file="$(find jackal_description)/launch/description.launch">
@@ -18,9 +18,14 @@
                     $(find jackal_description)/urdf/configs/$(arg config)
                     $(find xacro)/xacro $(find jackal_description)/urdf/jackal.urdf.xacro
                     --inorder" />
+
+  <!-- 创建publisher节点 -->
   <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
 
-  <include file="$(find jackal_control)/launch/control.launch" />
+  <include file="$(find jackal_control)/launch/control.launch">
+    <!-- EKF MUST be enabled for standard navigation to get odom TF. If running LIO-SAM, set this to false -->
+    <arg name="enable_ekf" value="true" />
+  </include>
   <include file="$(find jackal_control)/launch/teleop.launch">
     <arg name="joystick" value="false" />
   </include>

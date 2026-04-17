@@ -1,0 +1,29 @@
+<launch>
+
+  <!-- Bring up the simulation in a mapping-friendly mode. -->
+  <include file="$(find me5413_world)/launch/world.launch">
+    <arg name="spawn_mapping_obstacle" value="false" />
+  </include>
+
+  <!-- Manual driving remains the quickest way to collect an initial map. -->
+  <node name="teleop_twist_keyboard" pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py" output="screen" respawn="true"/>
+
+  <node name="cartographer_node"
+        pkg="cartographer_ros"
+        type="cartographer_node"
+        args="-configuration_directory $(find me5413_world)/config -configuration_basename cartographer_2d.lua"
+        output="screen">
+    <remap from="scan" to="/front/scan" />
+    <remap from="imu" to="/imu/data" />
+    <remap from="odom" to="/odometry/filtered" />
+  </node>
+
+  <node name="cartographer_occupancy_grid_node"
+        pkg="cartographer_ros"
+        type="cartographer_occupancy_grid_node"
+        args="-resolution 0.05 -publish_period_sec 1.0"
+        output="screen" />
+
+  <node type="rviz" name="rviz" pkg="rviz" args="-d $(find me5413_world)/rviz/gmapping.rviz" output="log" respawn="true"/>
+
+</launch>

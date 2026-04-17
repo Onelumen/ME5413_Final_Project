@@ -1,0 +1,230 @@
+
+\documentclass[11pt, a4paper]{article}
+
+% --- UNIVERSAL PREAMBLE BLOCK ---
+\usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=2cm, right=2cm]{geometry}
+\usepackage{fontspec}
+
+\usepackage[english]{babel}
+
+
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+% Document Info
+\title{\textbf{ME5413 Autonomous Mobile Robotics}\\Final Project Report (AY25/26)}
+\author{
+  Team Member A (SLAM \& Localization) \\ \texttt{emailA@u.nus.edu} \and
+  Team Member B (Perception \& CV) \\ \texttt{emailB@u.nus.edu} \and
+  Team Member C (Navigation \& Planning) \\ \texttt{emailC@u.nus.edu} \and
+  Team Member D (System Integration) \\ \texttt{emailD@u.nus.edu}
+}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This paper presents the development and implementation of a robust autonomous navigation and semantic perception framework for the Clearpath Jackal UGV within the context of the ME5413 final project. Our solution integrates cutting-edge robotic algorithms to overcome the challenges of complex 3D environments, including multi-level navigation and dynamic obstacle avoidance. We specifically deployed \textbf{LIO-SAM} for high-recall 3D mapping and environment characterization. For semantic understanding, a custom \textbf{Convolutional Neural Network (CNN)} was utilized to identify and localize target digits, supported by a \textbf{Weighted Spatial Fusion} algorithm to maintain a consistent semantic map. Local trajectory optimization was achieved via the \textbf{Timed Elastic Band (TEB)} planner, which was dynamically reconfigured to handle mechanical slippage on ramps and reactive avoidance of moving obstacles. Experimental results demonstrate that the integrated system achieves high localization precision and stable task execution in highly dynamic, multi-floor simulation scenarios.
+\end{abstract}
+
+\section{Introduction}
+The primary objective of this project is to design, implement, and validate a fully autonomous software stack for the Clearpath Jackal Unmanned Ground Vehicle (UGV) within a simulated, multi-story Gazebo environment. The operational mission is highly sequential and demands seamless coordination between perception, mapping, and motion planning subsystems. The robot is tasked with: (1) exploring the lower level to conduct a volumetric inventory of numbered boxes and identifying the least frequently occurring digit; (2) interacting with the environment by publishing a ROS topic to unlock a timed barrier; (3) successfully traversing a featureless ramp to reach the upper level; and (4) executing spatio-temporal obstacle avoidance to locate and safely dock at the designated target box.
+
+To meet these complex operational requirements, we developed a modular architecture leveraging the Robot Operating System (ROS Noetic). The system decouples high-level task scheduling from low-level continuous control. Spatial understanding and localization are driven by LIO-SAM and Adaptive Monte Carlo Localization (AMCL), while semantic digit recognition is handled by an ONNX-optimized CNN pipeline. Path generation is managed by a dual-costmap setup coupled with the TEB Local Planner. All of these subsystems are orchestrated by a central Python-based Finite State Machine (FSM), which ensures robust state transitions, timeout management, and failure recovery throughout the mission.
+
+\section{Mapping and Localization (Member A)}
+\subsection{Evolution of Mapping Strategies: From 2D to 3D LIO}
+The complexity of the simulated environment, featuring narrow corridors and featureless ramps, necessitated an evolution in our mapping strategies:
+\begin{itemize}
+    \item \textbf{Cartographer Experimentation}: Initially, we attempted both 2D and 3D Cartographer. However, the system suffered from frequent scan-to-submap matching failures during high-dynamic movements on the ramp. The aggressive pitch changes caused nonlinear IMU jitter, which corrupted the submap alignment and produced localized "ghost wall" artifacts.
+    \item \textbf{FAST-LIO Integration}: We transitioned to FAST-LIO, a computationally efficient IEKF-based LIO. While it demonstrated superior real-time performance, we observed significant longitudinal drift in the symmetrical hallways of the upper floor. Without a global factor graph optimization (GTSAM), the system was unable to rectify errors accumulated during the transit through feature-sparse corridors.
+    \item \textbf{LIO-SAM (Final Solution)}: We finalized our mapping using \textbf{LIO-SAM}. By integrating \textbf{IMU Pre-integration Factors} and \textbf{LiDAR Odometry Factors} into a globally optimized \textbf{Factor Graph}, the system achieved exceptional resilience. Its ability to perform distance-travelled based loop closure effectively neutralized the drift in symmetrical environments, providing a globally consistent 3D representation of the multi-floor terrain.
+\end{itemize}
+
+\subsection{2D Map Generation via Intelligent Multi-Pass Projection}
+To transform the sparse 3D point cloud into a navigation-ready grid map, we developed a sophisticated \textbf{Geometric Projection Pipeline} (\texttt{pcd\_to\_map}). The algorithm utilizes the hyperparameters listed in Table~\ref{tab:mapping_params}.
+
+\begin{table}[htbp]
+\centering
+\caption{Hyperparameters for PCD-to-Grid Projection}
+\label{tab:mapping_params}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Parameter} & \textbf{Value} & \textbf{Description} \\ \midrule
+\texttt{map\_resolution} & 0.05m & Spatial grid size for the occupancy map \\
+\texttt{thre\_z\_min} & 0.3m & Minimum vertical window for obstacle slicing \\
+\texttt{thre\_z\_max} & 2.0m & Maximum height limit to filter out ceilings \\
+\texttt{min\_obstacle\_height} & 0.3m & Threshold for Z-span thickness detection \\
+\texttt{search\_radius} & 1.0m & Separable min-filter reach for ground calibration \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Unlike simple binary slicing, our 2-pass ground calibration algorithm iterates through each grid cell and "borrows" the minimum height from a 1.0m neighborhood using a separable min-filter. This creates an adaptive "relative ground" reference, allowing the robot to accurately detect obstacles even on the incline of the ramp where the absolute Z-coordinate of the floor changes constantly.
+
+\subsection{LIO-SAM Sensor Integration and Reliability}
+The fidelity of our mapping depends on the high-frequency fusion of the sensory payloads listed in Table~\ref{tab:sensor_specs}. We utilized the \textbf{GTSAM} factor graph to manage the asynchronously arriving IMU and LiDAR data, ensuring that the 100Hz IMU pre-integration provides a stable prior for the 10Hz LiDAR scan matching.
+
+\begin{table}[htbp]
+\centering
+\caption{Sensor Payload and Simulation Parameters}
+\label{tab:sensor_specs}
+\begin{tabular}{@{}lllll@{}}
+\toprule
+\textbf{Sensor} & \textbf{Model} & \textbf{Frequency} & \textbf{Type} & \textbf{Purpose} \\ 
+\midrule
+LiDAR & Velodyne VLP-16 & 10 Hz & Geometry & 3D Environment capture \\
+IMU & Built-in (6-DOF) & 100 Hz & Motion & Kinematic state estimation \\
+RGB-D & Intel RealSense & 30 Hz & Semantic & Depth perception \\
+Encoder & Jackal standard & 50 Hz & Odometry & Raw wheel odometry \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Slippage-Resilient Localization (AMCL)}
+We implemented an \textbf{Adaptive Monte Carlo Localization} strategy to handle ramp traversals. We proactively increased the translation noise parameter \texttt{odom\_alpha3} to 2.5 and relaxed the \texttt{laser\_sigma\_hit} to 0.5. This configuration instructs the particle filter to prioritize the geometric consistency of the LiDAR scans over the highly-distorted wheel odometry data caused by mechanical slippage on the 15-degree incline.
+
+\section{Perception and Object Detection (Member B)}
+\subsection{Semantic Digit Recognition via ONNX Inference}
+The perception module identifies and localizes target boxes using a high-recall pipeline. We utilized a \textbf{CNN} architecture exported to an \textbf{ONNX} execution provider. The 3D coordinates $(x, y, z)$ in the map frame are derived from the depth map $Z_{img}$ and camera intrinsics $(f_x, f_y, c_x, c_y)$ using the following projection chain:
+\begin{equation}
+    P_{map} = T_{map}^{base\_link} \cdot T_{base\_link}^{camera} \cdot \begin{bmatrix} \frac{(u - c_x) Z_{img}}{f_x} \\ \frac{(v - c_y) Z_{img}}{f_y} \\ Z_{img} \\ 1 \end{bmatrix}
+\end{equation}
+
+\subsection{Weighted Spatial Fusion and De-duplication}
+To address redundant detections, we developed a \textbf{Semantic Map Manager}. It employs a Weighted Spatial Fusion algorithm to refine target box coordinates. When a new observation $P_{new}$ is within the merge radius $R$, the fused position $P_{fused}$ is updated as:
+\begin{equation}
+    P_{fused} = \frac{n \cdot P_{old} + P_{new}}{n + 1}
+\end{equation}
+where $n$ is the historical observation count. Core parameters for this perception pipeline are detailed in Table~\ref{tab:perception_params}.
+
+\begin{table}[htbp]
+\centering
+\caption{Hyperparameters for Perception and Fusion}
+\label{tab:perception_params}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Parameter} & \textbf{Value} & \textbf{Description} \\ \midrule
+\texttt{conf\_threshold} & 0.80 & Minimum confidence for valid CCN digit detection \\
+\texttt{merge\_radius} & 1.2m & Euclidean distance for volumetric box association \\
+\texttt{height\_min / max} & 0.15m / 1.0m & Physical Z-frame height filter to remove floor noise \\
+\texttt{sync\_slop} & 0.1s & Temporal slop for RGB and Depth image synchronization \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Navigation and Motion Planning (Member C)}
+\subsection{TEB Local Planner and Spatio-Temporal Avoidance}
+For trajectory generation, we deployed the \textbf{Timed Elastic Band (TEB)} planner. Unlike the Dynamic Window Approach (DWA), which relies on greedy velocity sampling, TEB solves a graph-based multi-objective optimization problem. This allows the Jackal UGV to anticipate moving obstacles by incorporating their velocity vectors into the elastic band's cost function, effectively preventing oscillations in narrow passages.
+
+\subsection{Adaptive Reconfiguration for Variable Terrain}
+Our system dynamically toggles between two specialized navigation profiles using the \texttt{dynamic\_reconfigure} utility. Table~\ref{tab:nav_reconfig} highlights the divergence in core parameters between standard cruising and ramp-climbing modes.
+
+\begin{table}[htbp]
+\centering
+\caption{Dynamic Reconfiguration: Standard vs. Ramp Mode}
+\label{tab:nav_reconfig}
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Parameter} & \textbf{Standard} & \textbf{Ramp} & \textbf{Rationale} \\ \midrule
+\texttt{max\_vel\_x} & 0.60 m/s & 0.35 m/s & Maximize stability and torque on incline \\
+\texttt{weight\_obstacle} & 80.0 & 150.0 & Aggressive buffer to prevent wall scraping \\
+\texttt{odom\_alpha3} & 0.1 & 2.5 & Compensate for mechanical wheel slippage \\
+\texttt{laser\_sigma\_hit} & 0.2 & 0.5 & Accommodate LiDAR tilt artifacts \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This proactive defense strategy ensures that the localization spread (particle covariance) remains bounded during the multi-floor transition phase.
+
+
+
+\section{Decision Making and System Integration (Member D)}
+\subsection{Finite State Machine (FSM) Architecture}
+To manage the complex sequence of mission objectives, we developed a centralized FSM node in Python (\texttt{task\_coordinator\_node}). The system progresses through sequential states as detailed in Table~\ref{tab:fsm_states}, ensuring task modularity and robust error handling.
+
+\begin{table}[htbp]
+\centering
+\caption{FSM State Mission Profile and Trigger Logic}
+\label{tab:fsm_states}
+\begin{tabular}{@{}lp{10cm}@{}}
+\toprule
+\textbf{State} & \textbf{Objective and Action} \\ \midrule
+\texttt{EXPLORE\_LOWER} & Sequential navigation of 39 waypoints; populates the digit occurrence dictionary via asynchronous vision callbacks. \\
+\texttt{CALCULATE\_TARGET} & Analyzes the dynamic dictionary to identify the globally least frequent digit using a minimum search algorithm. \\
+\texttt{UNBLOCK\_GATE} & Publishes a \texttt{True} boolean to \texttt{/cmd\_unblock} to trigger the Gazebo blockade reset script. \\
+\texttt{CROSS\_GATE} & Navigates through the narrow tunnel entrance with a 20s tactical timeout to handle initial gate collision risks. \\
+\texttt{APPROACH\_RAMP} & Aligns the robot's heading with the ramp base to ensure a straight and stable climb. \\
+\texttt{CLIMB\_RAMP} & High-torque ascent with extended 90s timeout. \\
+\texttt{RETREAT\_RAMP} & Fallback state: Reverses to map coordinates $(24.0, -4.0)$ if climbing stalls or times out, safely resetting localization belief. \\
+\texttt{NAV\_UPPER\_ROOM} & Enters the upper room while proactively anticipating and dodging the dynamic red cylinder. \\
+\texttt{SEARCH\_FINAL\_TARGET} & Idles and waits for the perception module to broadcast the target box coordinates. \\
+\texttt{ARRIVE\_AND\_FINISH} & Executes final geometric offset homing to stop exactly 0.6m in front of the fused target box centroid. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Strategic Timeout Preemption and Failure Recovery}
+A core engineering contribution of our system is the \textbf{Asynchronous Timeout Wrapper} developed for the \texttt{move\_base} action client. Given the risk of navigation deadlocks in narrow corridors, we implemented a custom preemption logic with the following policy:
+\begin{enumerate}
+    \item \textbf{Soft Preemption}: Each navigational goal is assigned a tactical duration ($T_{limit}$). For standard exploration $T_{limit}=30s$, while for the complex ramp climb $T_{limit}=90s$.
+    \item \textbf{Status-Driven Recovery}: If the \texttt{actionlib} client returns \texttt{ABORTED} due to a timeout, the FSM triggers a \textbf{Skip-and-Retry Policy}. If a specific waypoint fails twice consecutively, the coordinator increments the index to skip the blocked coordinate, ensuring the mission cycle remains continuous.
+    \item \textbf{Ramp Fallback}: In the specific case of the incline, a timeout or a detected velocity stall triggers a \texttt{RETREAT\_RAMP} state. The robot reverses to map frame coordinates $(24.0, -4.0)$ to stabilize its pitch and re-initiate the climb with a reset odometry belief, allowing up to 3 attempts.
+\end{enumerate}
+
+\subsection{Global Semantic Inventory Management}
+While the perception module (Section 3.2) independently handles the spatial deduplication of local coordinate frames via Euclidean clustering, the central FSM is responsible for maintaining the global semantic inventory across the entire mission timeline. We implemented a dynamic hash map (dictionary) within the FSM to continuously record the frequency of each distinct recognized digit (ranging from 1-9). Upon visiting all 39 lower-level waypoints, the FSM autonomously parses this data structure using a \texttt{min()} selection algorithm to extract the target digit, ensuring computational $O(N)$ efficiency. This clearly decouples the global task logic from the local spatial fusion.
+
+\subsection{Final Approach via Kinematic Offset Homing}
+To achieve precise proximity to the target digit without physical collision, we developed a dynamic geometric offset algorithm. Driving directly to the centroid $P_{box}=(x_{b}, y_{b})$ provided by the perception module would cause the robot chassis to collide with the box. By acquiring the robot's real-time pose $P_{robot}=(x_{r}, y_{r})$ from \texttt{/amcl\_pose}, the stopping coordinate $P_{goal}$ is derived by scaling the relative translation vector to maintain a strict safety standoff distance $d_{stop} = 0.6m$:
+\begin{equation}
+    P_{goal} = P_{robot} + \left( 1 - \frac{d_{stop}}{|| P_{box} - P_{robot} ||} \right) \cdot (P_{box} - P_{robot})
+\end{equation}
+Critically, the robot's final kinematic heading $\theta_{goal}$ must be aligned normal to the target surface. The FSM calculates this orientation using the arctangent function:
+\begin{equation}
+    \theta_{goal} = \text{atan2}(y_{b} - y_{r}, x_{b} - x_{r})
+\end{equation}
+This calculation effectively guarantees that the robot's front-facing sensors are directed squarely at the target box upon arrival.
+
+\section{Challenges and Solutions}
+
+\begin{itemize}
+    \item \textbf{Challenge 1: Navigation Deadlocks and Ramp Slippage (Member D).} 
+    Mechanical slippage on the 15-degree incline often caused localization divergence. \textbf{Solution:} We implemented an \textbf{Autonomous Recovery Cycle} (\texttt{RETREAT\_RAMP}). When a navigation timeout is detected, the robot reverses to a safe pose, resets its belief distribution, and re-initiates the climb with increased torque.
+    
+    \item \textbf{Challenge 2: Robust Navigation and Localization on the Inclined Ramp (Member C).} 
+    The 15-degree incline presented a multi-faceted challenge. Firstly, mechanical slippage during the ascent frequently led to severe wheel odometry drift, causing the AMCL particle distribution to diverge. Secondly, the planar projection of the LiDAR scans on a slope often resulted in "Ghost Obstacles" (misidentifying the ramp surface or ground as physical barriers), which effectively blocked the global planner even when the actual path was clear. Lastly, the narrow passage between the left wall and the right ramp boundary left a minimal safety margin, increasing the risk of chassis collisions during corrective maneuvers.
+    \textbf{Solution:} We achieved a robust trade-off by dynamically relaxing the AMCL noise parameters (\texttt{odom_alpha3=2.0}, \texttt{laser_sigma_hit=0.5}) to prevent the localization filter from collapsing during slippage. To counter ghost obstacles, we optimized the costmap ray-tracing logic and the point cloud filtering thresholds in the \texttt{pcd_to_map} pipeline. Furthermore, a \texttt{RETREAT_RAMP} recovery state was implemented in the Finite State Machine (FSM) to handle cases of extreme drift by reversing the Jackal to a known stable pose before re-initiating the climb.
+
+    \item \textbf{Challenge 4: Predictive Avoidance for High-Dynamic Obstacles (Member D).}
+    The second-floor hall featured a red cylinder moving at significant velocities. Standard reactive planners often failed to anticipate the cylinder's trajectory, leading to emergency stops or "oscillation" deadlocks in the middle of the hallway.
+    \textbf{Solution:} We utilized the \textbf{Timed Elastic Band (TEB)} local planner's ability to incorporate obstacle velocity vectors into its spatio-temporal optimization. By tuning the \texttt{weight_obstacle} and \texttt{dynamic_obstacle_inflation_dist}, the Jackal learned to "anticipate" the gap and maintain a smooth velocity profile while veering around the moving threat.
+
+    \item \textbf{Challenge 5: Recognition and Clearing of Sparse Pylon Obstacles (Member B).}
+    The randomized orange cones (pylons) were often sparse and thin, providing very few LiDAR returns. This occasionally caused the local costmap to fail to "mark" the obstacle, or caused the robot to attempt to drive directly through a pylon after it had moved (if standard clearing failed).
+    \textbf{Solution:} We implemented an aggressive \textbf{Raytrace Clearing} strategy with a tuned \texttt{raytrace_range}. By ensuring that rays effectively "pruned" the costmap along the lines of sight where no returns were received, the robot ensured that its internal representation of the workspace remained synchronized with the actual simulation state, preventing it from getting stuck on stale obstacle data.
+    
+    \item \textbf{Challenge 3: False Positives in Target Detection (Member B).}
+    Distant ground shadows were occasionally misclassified as digits. \textbf{Solution:} We developed a \textbf{Geometric Consistency Filter}. By coupling CNN confidence scores with a strict 3D physical height window ($0.15m < Z_{map} < 1.0m$), the system filtered out 98\% of background noise.
+\end{itemize}
+
+\section{Conclusion}
+In this project, we successfully integrated a complete autonomous robotics stack on the Jackal platform. By combining 3D SLAM, deep-learning-based perception, advanced TEB motion planning, and a robust state machine featuring timeout management and fallback recovery, the robot consistently completed the ME5413 final challenge. This demonstrated strong capabilities in mapping, dynamic obstacle avoidance, and resilient task-oriented navigation.
+
+\begin{thebibliography}{9}
+\bibitem{liosam}
+T. Shan, B. Englot, D. Meyers, W. Wang, C. Ratti, and D. Rus. \textit{LIO-SAM: Tightly-coupled Lidar Inertial Odometry via Smoothing and Mapping}. IEEE/RSJ International Conference on Intelligent Robots and Systems, 2020.
+\bibitem{cartographer}
+W. Hess, D. Kohler, H. Holzel, and D. Chen. \textit{Real-Time Loop Closure in 2D LiDAR SLAM}. IEEE International Conference on Robotics and Automation, 2016.
+\bibitem{amcl}
+D. Fox. \textit{KLD-Sampling: Adaptive Particle Filters}. Advances in Neural Information Processing Systems, 2001.
+\bibitem{teb} 
+C. Rösmann, W. Feiten, T. Wösch, F. Hoffmann and T. Bertram. \textit{Trajectory modification considering dynamic constraints of autonomous robots}. Robotics, 2012.
+\end{thebibliography}
+
+\end{document}

@@ -33,10 +33,13 @@ void ObjectSpawner::Load(physics::WorldPtr _world, sdf::ElementPtr _sdf)
   transport::NodePtr node(new transport::Node());
   node->Init(_world->Name());
   clt_delete_objects_ = nh_.serviceClient<gazebo_msgs::DeleteModel>("/gazebo/delete_model");
+
   this->timer_ = nh_.createTimer(ros::Duration(0.1), &ObjectSpawner::timerCallback, this);
+
   this->pub_factory_ = node->Advertise<msgs::Factory>("~/factory");
   this->sub_respawn_objects_ = nh_.subscribe("/rviz_panel/respawn_objects", 1, &ObjectSpawner::respawnCmdCallback, this);
   this->sub_cmd_open_bridge_ = nh_.subscribe("/cmd_unblock", 1, &ObjectSpawner::openBridgeCallback, this);
+
   this->pub_box_cmd_vel_ = nh_.advertise<geometry_msgs::Twist>("/box_cmd_vel", 10);
   this->sub_box_odom_ = nh_.subscribe("/box_odom", 10, &ObjectSpawner::boxOdomCallback, this);
   this->pub_rviz_markers_ = nh_.advertise<visualization_msgs::MarkerArray>("/gazebo/ground_truth/box_markers", 0);

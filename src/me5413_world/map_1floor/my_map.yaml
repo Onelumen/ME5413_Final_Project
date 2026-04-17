@@ -1,0 +1,7 @@
+image: /home/marmot/zhouxin/ME5413_Final_Project/src/me5413_world/maps2/my_map.pgm
+resolution: 0.050000
+origin: [-3.216021, -15.189363, 0.000000]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196
+

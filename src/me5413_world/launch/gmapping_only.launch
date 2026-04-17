@@ -1,0 +1,14 @@
+<launch>
+
+  <!-- Use this when Gazebo/world is already running and you only want to start GMapping. -->
+
+  <!-- Launch GMapping -->
+  <include file="$(find jackal_navigation)/launch/include/gmapping.launch" />
+
+  <!-- Launch Rviz with the mapping view -->
+  <node type="rviz" name="rviz" pkg="rviz"
+        args="-d $(find me5413_world)/rviz/gmapping.rviz"
+        output="log"
+        respawn="true"/>
+
+</launch>

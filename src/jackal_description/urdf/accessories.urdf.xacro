@@ -276,51 +276,62 @@
 
   <!-- If enabled, generate the flea3 camera payload with a tilt of 30 degrees. -->
   <xacro:if value="$(optenv JACKAL_FLEA3 1)">
-    <xacro:property name="name" value="$(optenv JACKAL_FLEA3_NAME front)" />
-    <xacro:property name="tilt" value="$(optenv JACKAL_FLEA3_TILT 0.)" />
-    <xacro:property name="tower" value="$(optenv JACKAL_FLEA3_TOWER 1)" />
-    <xacro:property name="mount" value="$(optenv JACKAL_FLEA3_MOUNT front)" />
-    <xacro:property name="prefix" value="$(optenv JACKAL_FLEA3_PREFIX ${mount})" />
-    <xacro:property name="parent" value="$(optenv JACKAL_FLEA3_PARENT ${mount}_mount)" />
+    <xacro:property name="prefix" value="front" />
+    <xacro:property name="parent" value="front_mount" />
 
-    <xacro:pointgrey_flea3 frame="${prefix}_camera" name="${name}"
-      camera_x="0.0754" camera_y="0.029" camera_z="0.029"
-      camera_mass="0.085" hfov="1.0471975512" fps="60" width="640" height="512"/>
+    <link name="${prefix}_camera_link">
+      <visual>
+        <geometry><box size="0.02 0.08 0.02"/></geometry>
+        <material name="black"><color rgba="0 0 0 1"/></material>
+      </visual>
+      <inertial>
+        <mass value="0.1" />
+        <origin xyz="0 0 0" />
+        <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001" />
+      </inertial>
+    </link>
 
-    <!-- Mount Enabled -->
-    <xacro:if value="${tower}">
-      <xacro:camera_mount prefix="${prefix}" tilt="${tilt}"/>
+    <joint name="${prefix}_camera_joint" type="fixed">
+      <parent link="${parent}" />
+      <child link="${prefix}_camera_link" />
+      <origin xyz="0.05 0 0.05" rpy="0 0 0" />
+    </joint>
 
-      <joint name="${prefix}_camera_mount_joint" type="fixed">
-        <origin xyz="$(optenv JACKAL_FLEA3_OFFSET 0 0 0)"
-                rpy="$(optenv JACKAL_FLEA3_RPY 0 0 0)" />
-        <parent link="${parent}" />
-        <child link="${prefix}_camera_mount" />
-      </joint>
+    <link name="${prefix}_camera_optical"/>
+    <joint name="${prefix}_camera_optical_joint" type="fixed">
+      <parent link="${prefix}_camera_link"/>
+      <child link="${prefix}_camera_optical"/>
+      <origin xyz="0 0 0" rpy="-1.57079632679 0 -1.57079632679"/> 
+    </joint>
 
-      <joint name="${prefix}_camera_bracket_joint" type="fixed">
-        <origin xyz="0.020 0 0.0245" rpy="0 0 0" />
-        <parent link="${prefix}_camera_beam" />
-        <child link="${prefix}_camera" />
-      </joint>
-    </xacro:if>
-
-    <!-- Mount Disabled -->
-    <xacro:unless value="${tower}">
-      <link name="${prefix}_camera_base"/>
-      <joint name="${prefix}_camera_base_joint" type="fixed">
-        <origin xyz="$(optenv JACKAL_FLEA3_OFFSET 0 0 0)"
-                rpy="$(optenv JACKAL_FLEA3_RPY 0 0 0)" />
-        <parent link="${parent}" />
-        <child link="${prefix}_camera_base" />
-      </joint>
-      <joint name="${prefix}_camera_joint" type="fixed">
-        <origin xyz="0 0 0.0145"
-                rpy="0 0 0" />
-        <parent link="${prefix}_camera_base" />
-        <child link="${prefix}_camera" />
-      </joint>
-    </xacro:unless>
+    <gazebo reference="${prefix}_camera_link">
+      <sensor type="depth" name="${prefix}_depth_camera">
+        <always_on>true</always_on>
+        <update_rate>20.0</update_rate>
+        <camera>
+          <horizontal_fov>1.3962634</horizontal_fov>
+          <image>
+            <format>R8G8B8</format>
+            <width>640</width>
+            <height>480</height>
+          </image>
+          <clip><near>0.05</near><far>8.0</far></clip>
+        </camera>
+        <plugin name="kinect_camera_controller" filename="libgazebo_ros_openni_kinect.so">
+          <cameraName>${prefix}</cameraName>
+          <alwaysOn>true</alwaysOn>
+          <updateRate>20</updateRate>
+          <imageTopicName>image_raw</imageTopicName>
+          <depthImageTopicName>depth/image_raw</depthImageTopicName>
+          <pointCloudTopicName>depth/points</pointCloudTopicName>
+          <cameraInfoTopicName>camera_info</cameraInfoTopicName>
+          <depthImageCameraInfoTopicName>depth/camera_info</depthImageCameraInfoTopicName>
+          <frameName>${prefix}_camera_optical</frameName>
+          <baseline>0.1</baseline>
+          <pointCloudCutoff>0.5</pointCloudCutoff>
+        </plugin>
+      </sensor>
+    </gazebo>
   </xacro:if>
 
   <xacro:include filename="$(find jackal_description)/urdf/accessories/stereo_camera_mount.urdf.xacro" />

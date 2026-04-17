@@ -1,0 +1,37 @@
+<launch>
+
+  <!-- LIO-SAM for Jackal in ME5413 simulation -->
+  <!-- Run AFTER world.launch is already started -->
+
+  <rosparam file="$(find me5413_world)/config/liosam_jackal.yaml" command="load"/>
+
+  <!-- IMU preintegration -->
+  <node pkg="lio_sam" type="lio_sam_imuPreintegration" name="lio_sam_imuPreintegration" output="screen">
+    <env name="LD_LIBRARY_PATH" value="/usr/local/lib:$(env LD_LIBRARY_PATH)"/>
+  </node>
+
+  <!-- LiDAR feature extraction -->
+  <node pkg="lio_sam" type="lio_sam_featureExtraction" name="lio_sam_featureExtraction" output="screen">
+    <env name="LD_LIBRARY_PATH" value="/usr/local/lib:$(env LD_LIBRARY_PATH)"/>
+  </node>
+
+  <!-- LiDAR odometry -->
+  <node pkg="lio_sam" type="lio_sam_imageProjection" name="lio_sam_imageProjection" output="screen">
+    <env name="LD_LIBRARY_PATH" value="/usr/local/lib:$(env LD_LIBRARY_PATH)"/>
+  </node>
+
+  <!-- Map optimization -->
+  <node pkg="lio_sam" type="lio_sam_mapOptmization" name="lio_sam_mapOptmization" output="screen">
+    <env name="LD_LIBRARY_PATH" value="/usr/local/lib:$(env LD_LIBRARY_PATH)"/>
+  </node>
+
+  <!-- Keyboard teleop -->
+  <node name="teleop_twist_keyboard" pkg="teleop_twist_keyboard"
+        type="teleop_twist_keyboard.py" output="screen" respawn="true"/>
+
+  <!-- RViz -->
+  <node type="rviz" name="rviz" pkg="rviz"
+        args="-d $(find me5413_world)/rviz/gmapping.rviz"
+        output="log" respawn="true"/>
+
+</launch>

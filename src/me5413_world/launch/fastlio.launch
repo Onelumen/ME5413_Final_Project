@@ -1,0 +1,32 @@
+<launch>
+
+  <!-- FAST-LIO2 3D LiDAR SLAM for Jackal in ME5413 simulation -->
+  <!-- Run AFTER world.launch is already started -->
+
+  <!-- Load FAST-LIO2 parameters for Jackal (VLP-16 + IMU) -->
+  <rosparam command="load" file="$(find fast_lio)/config/velodyne_jackal.yaml" />
+
+  <param name="feature_extract_enable" type="bool" value="0"/>
+  <param name="point_filter_num" type="int" value="3"/>
+  <param name="max_iteration" type="int" value="3" />
+  <param name="filter_size_surf" type="double" value="0.3" />
+  <param name="filter_size_map" type="double" value="0.3" />
+  <param name="cube_side_length" type="double" value="1000" />
+  <param name="runtime_pos_log_enable" type="bool" value="0" />
+
+  <node pkg="fast_lio" type="fastlio_mapping" name="laserMapping" output="screen" />
+
+  <!-- Align FAST-LIO2's world frame (camera_init) with the ROS map frame -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="map_to_camera_init"
+        args="0 0 0 0 0 0 map camera_init" />
+
+  <!-- Keyboard teleop -->
+  <node name="teleop_twist_keyboard" pkg="teleop_twist_keyboard"
+        type="teleop_twist_keyboard.py" output="screen" respawn="true"/>
+
+  <!-- RViz -->
+  <node type="rviz" name="rviz" pkg="rviz"
+        args="-d $(find fast_lio)/rviz_cfg/loam_livox.rviz"
+        output="log" respawn="false"/>
+
+</launch>
